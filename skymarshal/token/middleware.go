@@ -21,11 +21,12 @@ type Middleware interface {
 }
 
 type middleware struct {
+	sameSite      http.SameSite
 	secureCookies bool
 }
 
-func NewMiddleware(secureCookies bool) Middleware {
-	return &middleware{secureCookies: secureCookies}
+func NewMiddleware(sameSite http.SameSite, secureCookies bool) Middleware {
+	return &middleware{sameSite: sameSite, secureCookies: secureCookies}
 }
 
 const stateCookieName = "skymarshal_state"
@@ -38,6 +39,7 @@ func (m *middleware) UnsetAuthToken(w http.ResponseWriter) {
 		Path:     "/",
 		MaxAge:   -1,
 		Secure:   m.secureCookies,
+		SameSite: m.sameSite,
 		HttpOnly: true,
 	})
 }
@@ -49,6 +51,7 @@ func (m *middleware) SetAuthToken(w http.ResponseWriter, tokenStr string, expiry
 		Path:     "/",
 		Expires:  expiry,
 		HttpOnly: true,
+		SameSite: m.sameSite,
 		Secure:   m.secureCookies,
 	})
 
