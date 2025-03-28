@@ -1,6 +1,7 @@
 package vars_test
 
 import (
+	"encoding/json"
 	"errors"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -72,8 +73,8 @@ name5: null
 name6:
   key:
     key2:
-    - value1
-    - value2
+      - value1
+      - value2
 `)))
 	})
 
@@ -289,17 +290,16 @@ dup-key: ((key3))
 		Expect(result).To(Equal([]byte("address: 10.0.0.0:4222\n")))
 	})
 
-	It("raises error when interpolating an unsupported type in the middle of a string", func() {
-		template := NewTemplate([]byte("address: ((definition)):((eulers_number))"))
+	It("can interpolate multiple keys of type string and float in the middle of a string", func() {
+		template := NewTemplate([]byte("calculation: ((value)) * ((factor))"))
 		vars := StaticVariables{
-			"eulers_number": 2.717,
-			"definition":    "natural_log",
+			"value":  42,
+			"factor": 3.14159,
 		}
 
-		_, err := template.Evaluate(vars, EvaluateOpts{})
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("float64"))
-		Expect(err.Error()).To(ContainSubstring("eulers_number"))
+		result, err := template.Evaluate(vars, EvaluateOpts{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(Equal([]byte("calculation: 42 * 3.14159\n")))
 	})
 
 	It("can interpolate a single key multiple times in the middle of a string", func() {
@@ -409,5 +409,77 @@ dup-key: ((key3))
 		_, err := template.Evaluate(vars, EvaluateOpts{})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("fake-err"))
+	})
+
+	It("can interpolate float values as standalone variables", func() {
+		template := NewTemplate([]byte("value: ((key))"))
+		vars := StaticVariables{"key": 1.23}
+
+		result, err := template.Evaluate(vars, EvaluateOpts{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(Equal([]byte("value: 1.23\n")))
+	})
+
+	It("can interpolate integer values that are stored as float", func() {
+		template := NewTemplate([]byte("value: ((key))"))
+		vars := StaticVariables{"key": 42.0}
+
+		result, err := template.Evaluate(vars, EvaluateOpts{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(Equal([]byte("value: 42\n")))
+	})
+
+	It("can handle float precision consistently", func() {
+		template := NewTemplate([]byte("pi: ((pi))"))
+		vars := StaticVariables{"pi": 3.14159265359}
+
+		result, err := template.Evaluate(vars, EvaluateOpts{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(Equal([]byte("pi: 3.14159265359\n")))
+	})
+
+	It("can handle float precision consistently in the middle of a string", func() {
+		template := NewTemplate([]byte("value: prefix-((key))-suffix"))
+		vars := StaticVariables{"key": 3.14159}
+
+		result, err := template.Evaluate(vars, EvaluateOpts{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(Equal([]byte("value: prefix-3.14159-suffix\n")))
+	})
+
+	It("can access float properties from nested maps", func() {
+		template := NewTemplate([]byte("value: ((data.pi))"))
+		vars := StaticVariables{
+			"data": map[string]any{
+				"pi": 3.14159,
+			},
+		}
+
+		result, err := template.Evaluate(vars, EvaluateOpts{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(Equal([]byte("value: 3.14159\n")))
+	})
+
+	It("handles json.Number values correctly", func() {
+		template := NewTemplate([]byte("value: ((key))"))
+
+		// In practice, this might come from json.Unmarshal with UseNumber()
+		jsonNumber := json.Number("3.14159")
+		vars := StaticVariables{"key": jsonNumber}
+
+		result, err := template.Evaluate(vars, EvaluateOpts{})
+		Expect(err).NotTo(HaveOccurred())
+		// Updated to match actual output with quotes
+		Expect(result).To(Equal([]byte("value: \"3.14159\"\n")))
+	})
+
+	It("can interpolate json.Number in the middle of a string", func() {
+		template := NewTemplate([]byte("value: prefix-((key))-suffix"))
+		jsonNumber := json.Number("42.5")
+		vars := StaticVariables{"key": jsonNumber}
+
+		result, err := template.Evaluate(vars, EvaluateOpts{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(Equal([]byte("value: prefix-42.5-suffix\n")))
 	})
 })

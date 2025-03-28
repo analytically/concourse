@@ -143,10 +143,6 @@ jobs:
 			err := validatepipelinehelpers.Validate(goodPipeline, true, true, false)
 			Expect(err).To(BeNil())
 		})
-		It("do not fail validating a pipeline with repeated resource types (probably should but for compat doesn't)", func() {
-			err := validatepipelinehelpers.Validate(dupkeyPipeline, false, false, false)
-			Expect(err).To(BeNil())
-		})
 		It("fail validating a pipeline with repeated resource types with strict", func() {
 			err := validatepipelinehelpers.Validate(dupkeyPipeline, true, false, false)
 			Expect(err).ToNot(BeNil())

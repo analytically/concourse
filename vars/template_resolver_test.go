@@ -4,7 +4,7 @@ import (
 	"github.com/concourse/concourse/vars"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"sigs.k8s.io/yaml"
+	"gopkg.in/yaml.v3"
 )
 
 var _ = Describe("Template", func() {
@@ -56,10 +56,10 @@ jobs:
 			})
 
 			It("evaluates all params", func() {
-				evaluatedContent1, err := vars.NewTemplateResolver(configPayload, []vars.Variables{staticVars}).Resolve(false, true)
+				evaluatedContent1, err := vars.NewTemplateResolver(configPayload, []vars.Variables{staticVars}).Resolve(false)
 				Expect(err).NotTo(HaveOccurred())
 
-				evaluatedContent2, err := vars.NewTemplateResolver(configPayload, []vars.Variables{staticVars}).Resolve(true, true)
+				evaluatedContent2, err := vars.NewTemplateResolver(configPayload, []vars.Variables{staticVars}).Resolve(true)
 				Expect(err).NotTo(HaveOccurred())
 
 				Expect(evaluatedContent1).To(Equal(evaluatedContent2))
@@ -102,7 +102,7 @@ resources:
 			})
 
 			It("evaluates only given params if expectAllKeys = false", func() {
-				evaluatedContent, err := vars.NewTemplateResolver(configPayload, []vars.Variables{staticVars}).Resolve(false, true)
+				evaluatedContent, err := vars.NewTemplateResolver(configPayload, []vars.Variables{staticVars}).Resolve(false)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(evaluatedContent).To(MatchYAML([]byte(`
 resources:
@@ -119,7 +119,7 @@ resources:
 			})
 
 			It("fails with an error if expectAllKeys = true", func() {
-				_, err := vars.NewTemplateResolver(configPayload, []vars.Variables{staticVars}).Resolve(true, true)
+				_, err := vars.NewTemplateResolver(configPayload, []vars.Variables{staticVars}).Resolve(true)
 				Expect(err).To(HaveOccurred())
 			})
 		})
@@ -162,7 +162,7 @@ env: some-env-override
 
 			It("evaluates params using param sources in the given order", func() {
 				// forward order
-				evaluatedContent1, err := vars.NewTemplateResolver(configPayload, []vars.Variables{staticVars, staticVars2}).Resolve(false, true)
+				evaluatedContent1, err := vars.NewTemplateResolver(configPayload, []vars.Variables{staticVars, staticVars2}).Resolve(false)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(evaluatedContent1).To(MatchYAML([]byte(`
 resources:
@@ -186,7 +186,7 @@ jobs:
 				)))
 
 				// reverse order
-				evaluatedContent2, err := vars.NewTemplateResolver(configPayload, []vars.Variables{staticVars2, staticVars}).Resolve(false, true)
+				evaluatedContent2, err := vars.NewTemplateResolver(configPayload, []vars.Variables{staticVars2, staticVars}).Resolve(false)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(evaluatedContent2).To(MatchYAML([]byte(`
 resources:
@@ -213,70 +213,13 @@ jobs:
 		})
 	})
 
-	It("can template values into a byte slice", func() {
-		byteSlice := []byte("{{key}}")
-		variables := vars.StaticVariables{
-			"key": "foo",
-		}
-
-		result, err := vars.NewTemplateResolver(byteSlice, []vars.Variables{variables}).ResolveDeprecated(false)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(result).To(Equal([]byte(`"foo"`)))
-	})
-
-	It("can template multiple values into a byte slice", func() {
-		byteSlice := []byte("{{key}}={{value}}")
-		variables := vars.StaticVariables{
-			"key":   "foo",
-			"value": "bar",
-		}
-
-		result, err := vars.NewTemplateResolver(byteSlice, []vars.Variables{variables}).ResolveDeprecated(false)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(result).To(Equal([]byte(`"foo"="bar"`)))
-	})
-
-	It("can template unicode values into a byte slice", func() {
-		byteSlice := []byte("{{Ω}}")
-		variables := vars.StaticVariables{
-			"Ω": "☃",
-		}
-
-		result, err := vars.NewTemplateResolver(byteSlice, []vars.Variables{variables}).ResolveDeprecated(false)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(result).To(Equal([]byte(`"☃"`)))
-	})
-
-	It("can template keys with dashes and underscores into a byte slice", func() {
-		byteSlice := []byte("{{with-a-dash}} = {{with_an_underscore}}")
-		variables := vars.StaticVariables{
-			"with-a-dash":        "dash",
-			"with_an_underscore": "underscore",
-		}
-
-		result, err := vars.NewTemplateResolver(byteSlice, []vars.Variables{variables}).ResolveDeprecated(false)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(result).To(Equal([]byte(`"dash" = "underscore"`)))
-	})
-
-	It("can template the same value multiple times into a byte slice", func() {
-		byteSlice := []byte("{{key}}={{key}}")
-		variables := vars.StaticVariables{
-			"key": "foo",
-		}
-
-		result, err := vars.NewTemplateResolver(byteSlice, []vars.Variables{variables}).ResolveDeprecated(false)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(result).To(Equal([]byte(`"foo"="foo"`)))
-	})
-
 	It("ignores values referencing local var sources", func() {
 		byteSlice := []byte("((key))=((.:key))")
 		variables := vars.StaticVariables{
 			"key": "foo",
 		}
 
-		result, err := vars.NewTemplateResolver(byteSlice, []vars.Variables{variables}).Resolve(false, true)
+		result, err := vars.NewTemplateResolver(byteSlice, []vars.Variables{variables}).Resolve(false)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(result)).To(Equal("foo=((.:key))\n"))
 	})
@@ -287,43 +230,8 @@ jobs:
 			"key": "foo",
 		}
 
-		result, err := vars.NewTemplateResolver(byteSlice, []vars.Variables{variables}).Resolve(false, true)
+		result, err := vars.NewTemplateResolver(byteSlice, []vars.Variables{variables}).Resolve(false)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(result)).To(Equal("foo=((source:key))\n"))
 	})
-
-	It("can template values with strange newlines", func() {
-		byteSlice := []byte("{{key}}")
-		variables := vars.StaticVariables{
-			"key": "this\nhas\nmany\nlines",
-		}
-
-		result, err := vars.NewTemplateResolver(byteSlice, []vars.Variables{variables}).ResolveDeprecated(false)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(result).To(Equal([]byte(`"this\nhas\nmany\nlines"`)))
-	})
-
-	It("raises an error for each variable that is undefined", func() {
-		byteSlice := []byte("{{not-specified-one}}{{not-specified-two}}")
-		variables := vars.StaticVariables{}
-		errorMsg := `2 errors occurred:
-	* unbound variable in template: 'not-specified-one'
-	* unbound variable in template: 'not-specified-two'
-
-`
-
-		_, err := vars.NewTemplateResolver(byteSlice, []vars.Variables{variables}).ResolveDeprecated(false)
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(Equal(errorMsg))
-	})
-
-	It("ignores an invalid input", func() {
-		byteSlice := []byte("{{}")
-		variables := vars.StaticVariables{}
-
-		result, err := vars.NewTemplateResolver(byteSlice, []vars.Variables{variables}).ResolveDeprecated(false)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(result).To(Equal([]byte("{{}")))
-	})
-
 })

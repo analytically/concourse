@@ -35,7 +35,6 @@ func NewYamlTemplateWithParams(
 }
 
 func (yamlTemplate YamlTemplateWithParams) Evaluate(
-	allowEmpty bool,
 	strict bool,
 ) ([]byte, error) {
 	config, err := os.ReadFile(string(yamlTemplate.filePath))
@@ -89,7 +88,7 @@ func (yamlTemplate YamlTemplateWithParams) Evaluate(
 		params = append(params, staticVars)
 	}
 
-	evaluatedConfig, err := vars.NewTemplateResolver(config, params).Resolve(false, allowEmpty)
+	evaluatedConfig, err := vars.NewTemplateResolver(config, params).Resolve(false)
 	if err != nil {
 		return nil, err
 	}

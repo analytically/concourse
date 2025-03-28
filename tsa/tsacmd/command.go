@@ -6,13 +6,12 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
-	yaml "gopkg.in/yaml.v2"
-
-	"os/signal"
-	"syscall"
+	yaml "gopkg.in/yaml.v3"
 
 	"code.cloudfoundry.org/lager/v3"
 	"github.com/concourse/concourse/atc"

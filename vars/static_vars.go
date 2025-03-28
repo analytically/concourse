@@ -33,6 +33,15 @@ func (v StaticVariables) List() ([]Reference, error) {
 func Traverse(val any, name string, fields []string) (any, error) {
 	for _, seg := range fields {
 		switch v := val.(type) {
+		case StaticVariables:
+			var found bool
+			val, found = v[seg]
+			if !found {
+				return nil, MissingFieldError{
+					Name:  name,
+					Field: seg,
+				}
+			}
 		case map[any]any:
 			var found bool
 			val, found = v[seg]
@@ -75,6 +84,10 @@ func flatten(path string, fields []string, value any) KVPairs {
 
 	switch node := value.(type) {
 	case map[string]any:
+		for k, v := range node {
+			flat = append(flat, flatten(path, append(fields, k), v)...)
+		}
+	case StaticVariables:
 		for k, v := range node {
 			flat = append(flat, flatten(path, append(fields, k), v)...)
 		}

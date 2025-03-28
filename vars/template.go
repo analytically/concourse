@@ -1,14 +1,16 @@
 package vars
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/hashicorp/go-multierror"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 type Template struct {
@@ -31,10 +33,6 @@ func (t Template) ExtraVarNames() []string {
 func (t Template) Evaluate(vars Variables, opts EvaluateOpts) ([]byte, error) {
 	var obj any
 
-	// Note: if we do end up changing from "gopkg.in/yaml.v2" to
-	// "sigs.k8s.io/yaml" here, we'll want to ensure we call
-	// `json.Decoder.UseNumber()` so that we don't lose precision unmarshaling
-	// numbers to float64.
 	err := yaml.Unmarshal(t.bytes, &obj)
 	if err != nil {
 		return []byte{}, err
@@ -45,12 +43,16 @@ func (t Template) Evaluate(vars Variables, opts EvaluateOpts) ([]byte, error) {
 		return []byte{}, err
 	}
 
-	bytes, err := yaml.Marshal(obj)
+	buf := bytes.Buffer{}
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+
+	err = enc.Encode(&obj)
 	if err != nil {
 		return []byte{}, err
 	}
 
-	return bytes, nil
+	return buf.Bytes(), nil
 }
 
 func (t Template) interpolateRoot(obj any, tracker varsTracker) (any, error) {
@@ -88,6 +90,36 @@ func (i interpolator) Interpolate(node any, tracker varsTracker) (any, error) {
 			typedNode[evaluatedKey] = evaluatedValue
 		}
 
+	case map[string]any:
+		for k, v := range typedNode {
+			evaluatedValue, err := i.Interpolate(v, tracker)
+			if err != nil {
+				return nil, err
+			}
+
+			evaluatedKey, err := i.Interpolate(k, tracker)
+			if err != nil {
+				return nil, err
+			}
+
+			// Handle case when key is not a string after interpolation
+			if strKey, ok := evaluatedKey.(string); ok {
+				delete(typedNode, k) // delete in case key has changed
+				typedNode[strKey] = evaluatedValue
+			} else {
+				// Convert map[string]any to map[any]any if keys are not strings
+				anyMap := make(map[any]any, len(typedNode))
+				for mapK, mapV := range typedNode {
+					if mapK == k {
+						anyMap[evaluatedKey] = evaluatedValue
+					} else {
+						anyMap[mapK] = mapV
+					}
+				}
+				return anyMap, nil
+			}
+		}
+
 	case []any:
 		for idx, x := range typedNode {
 			var err error
@@ -98,6 +130,22 @@ func (i interpolator) Interpolate(node any, tracker varsTracker) (any, error) {
 		}
 
 	case string:
+		// Check if this is a standalone variable reference (e.g., "((var))")
+		if interpolationAnchoredRegex.MatchString(typedNode) {
+			varName := interpolationAnchoredRegex.FindStringSubmatch(typedNode)[1]
+			foundVal, found, err := tracker.Get(varName)
+			if err != nil {
+				return nil, err
+			}
+
+			if found {
+				return foundVal, nil
+			}
+			return typedNode, nil
+		}
+
+		// Handle interpolation within strings
+		var interpolationError error
 		for _, name := range i.extractVarNames(typedNode) {
 			foundVal, found, err := tracker.Get(name)
 			if err != nil {
@@ -105,22 +153,32 @@ func (i interpolator) Interpolate(node any, tracker varsTracker) (any, error) {
 			}
 
 			if found {
-				// ensure that value type is preserved when replacing the entire field
-				if interpolationAnchoredRegex.MatchString(typedNode) {
-					return foundVal, nil
-				}
-
-				switch foundVal.(type) {
-				case string, int, int16, int32, int64, uint, uint16, uint32, uint64, json.Number:
+				switch v := foundVal.(type) {
+				case string:
+					typedNode = strings.Replace(typedNode, fmt.Sprintf("((%s))", name), v, -1)
+				case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+					foundValStr := fmt.Sprintf("%v", foundVal)
+					typedNode = strings.Replace(typedNode, fmt.Sprintf("((%s))", name), foundValStr, -1)
+				case float32:
+					foundValStr := strconv.FormatFloat(float64(v), 'f', -1, 32)
+					typedNode = strings.Replace(typedNode, fmt.Sprintf("((%s))", name), foundValStr, -1)
+				case float64:
+					foundValStr := strconv.FormatFloat(v, 'f', -1, 64)
+					typedNode = strings.Replace(typedNode, fmt.Sprintf("((%s))", name), foundValStr, -1)
+				case json.Number:
 					foundValStr := fmt.Sprintf("%v", foundVal)
 					typedNode = strings.Replace(typedNode, fmt.Sprintf("((%s))", name), foundValStr, -1)
 				default:
-					return nil, InvalidInterpolationError{
+					interpolationError = InvalidInterpolationError{
 						Name:  name,
-						Value: foundVal,
+						Value: v,
 					}
 				}
 			}
+		}
+
+		if interpolationError != nil {
+			return nil, interpolationError
 		}
 
 		return typedNode, nil
@@ -229,7 +287,7 @@ func (t varsTracker) ExtraError() error {
 
 func names(mapWithNames map[string]struct{}) []string {
 	var names []string
-	for name, _ := range mapWithNames {
+	for name := range mapWithNames {
 		names = append(names, name)
 	}
 
